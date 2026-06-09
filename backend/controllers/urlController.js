@@ -7,6 +7,11 @@ import { cache } from "../services/cache.js";
 const COUNTER_ID = "url_counter";
 const COUNTER_OFFSET = 10000; // start slugs at a few chars long
 
+const getBaseUrl = () => {
+  const base = process.env.BASE_URL || "http://localhost";
+  return base.replace(/\/$/, "");
+};
+
 async function nextSlug() {
   const c = await Counter.findByIdAndUpdate(
     COUNTER_ID,
@@ -22,17 +27,45 @@ export async function createShortUrl(req, res) {
     if (!longUrl || !/^https?:\/\//i.test(longUrl)) {
       return res.status(400).json({ error: "Provide a valid http(s) URL" });
     }
+
+    const base = getBaseUrl();
+
+    // ==========================================
+    // SAFE FIX: Use MongoDB to check for duplicates
+    // ==========================================
+    const existingDoc = await Url.findOne({ longUrl }).lean();
+    if (existingDoc) {
+      // If found in the DB, return it immediately without incrementing the counter
+      return res.json({
+        slug: existingDoc.slug,
+        longUrl: existingDoc.longUrl,
+        shortUrl: `${base}/${existingDoc.slug}`,
+        createdAt: existingDoc.createdAt,
+      });
+    }
+
+    // ==========================================
+    // NEW LINK FLOW: Only runs if URL is unique
+    // ==========================================
     const slug = await nextSlug();
     const doc = await Url.create({ slug, longUrl });
-    const base = process.env.BASE_URL || `http://localhost:${process.env.PORT || 4000}`;
+
+    // Optional cache population (wrapped safely so errors don't stall execution)
+    try {
+      await cache.set(slug, longUrl);
+    } catch (cacheErr) {
+      console.warn("Cache write skipped:", cacheErr.message);
+    }
+
     res.json({
       slug: doc.slug,
       longUrl: doc.longUrl,
       shortUrl: `${base}/${doc.slug}`,
       createdAt: doc.createdAt,
     });
+
   } catch (err) {
-    console.error(err);
+    console.error("Shortening Error:", err);
     res.status(500).json({ error: "Failed to shorten URL" });
   }
 }
