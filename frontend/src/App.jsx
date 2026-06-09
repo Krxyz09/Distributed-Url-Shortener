@@ -18,7 +18,7 @@ export default function App() {
           <Route path="/dashboard" element={<Dashboard />} />
         </Routes>
       </main>
-      <footer className="footer">Built with React + Node + MongoDB</footer>
+      <footer className="footer">Built By Krish Jindal</footer>
     </div>
   );
 }
